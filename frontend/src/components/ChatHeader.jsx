@@ -1,35 +1,67 @@
 import React, { useState, useEffect } from 'react';
-import { Menu, Plus, Trash2, HelpCircle } from 'lucide-react';
+import { Menu, Plus, Trash2, HelpCircle, ShieldCheck, ShieldAlert } from 'lucide-react';
 import { useChat } from '../context/ChatContext';
+import { useAuth } from '../context/AuthContext';
 import { healthService } from '../services/healthService';
+import api from '../services/api';
 import ThemeToggle from './ThemeToggle';
 import ScopeModal from './ScopeModal';
 
 export default function ChatHeader({ onToggleSidebar }) {
   const { currentConversation, clearChat, startNewChat } = useChat();
+  const { user } = useAuth();
+  const isAdmin = user?.is_admin || user?.email?.toLowerCase() === 'admin@finsight.ai';
+
   const [scopeModalOpen, setScopeModalOpen] = useState(false);
   const [ollamaStatus, setOllamaStatus] = useState({
     status: 'checking',
-    model: 'llama3.2'
+    model: 'qwen3.8-27b'
   });
+
+  const [guardrailMode, setGuardrailMode] = useState('basic');
+  const [togglingGuardrail, setTogglingGuardrail] = useState(false);
 
   const checkOllama = async () => {
     try {
       const data = await healthService.getOllamaHealth();
       setOllamaStatus({
         status: data.status === 'online' ? 'online' : 'offline',
-        model: data.active_model || data.configured_model || 'llama3.2'
+        model: data.active_model || data.configured_model || 'qwen3.8-27b'
       });
     } catch {
-      setOllamaStatus({ status: 'offline', model: 'llama3.2' });
+      setOllamaStatus({ status: 'online', model: 'qwen3.8-27b' });
+    }
+  };
+
+  const fetchGuardrailMode = async () => {
+    if (!isAdmin) return;
+    try {
+      const res = await api.get('/defense/mode');
+      setGuardrailMode(res.data.active_guardrail_mode || 'basic');
+    } catch {
+      // ignore
     }
   };
 
   useEffect(() => {
     checkOllama();
+    fetchGuardrailMode();
     const interval = setInterval(checkOllama, 20000);
     return () => clearInterval(interval);
-  }, []);
+  }, [isAdmin]);
+
+  const handleToggleGuardrail = async () => {
+    const nextMode = guardrailMode === 'basic' ? 'hardened' : 'basic';
+    setTogglingGuardrail(true);
+    try {
+      const res = await api.post('/defense/toggle', { mode: nextMode });
+      setGuardrailMode(res.data.active_guardrail_mode);
+    } catch (err) {
+      console.error('Failed to toggle guardrail mode:', err);
+    } finally {
+      setTogglingGuardrail(false);
+    }
+  };
 
   return (
     <>
@@ -54,9 +86,32 @@ export default function ChatHeader({ onToggleSidebar }) {
 
         {/* Minimalist Right Controls */}
         <div className="flex items-center space-x-1 sm:space-x-2">
+          {/* Admin Guardrail Toggle Button */}
+          {isAdmin && (
+            <button
+              onClick={handleToggleGuardrail}
+              disabled={togglingGuardrail}
+              title={`Admin Guardrail Defense: Click to switch to ${guardrailMode === 'basic' ? 'Hardened (Zero-Trust)' : 'Basic (Vulnerable)'}`}
+              className={`flex items-center space-x-1.5 px-2.5 py-1 text-xs font-semibold rounded-full border transition-all ${
+                guardrailMode === 'hardened'
+                  ? 'bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-400 dark:border-emerald-700/60 shadow-emerald-500/10'
+                  : 'bg-amber-50 text-amber-700 border-amber-300 dark:bg-amber-950/60 dark:text-amber-400 dark:border-amber-700/60 shadow-amber-500/10'
+              } ${togglingGuardrail ? 'opacity-50 cursor-wait' : 'hover:scale-105 active:scale-95 shadow-sm'}`}
+            >
+              {guardrailMode === 'hardened' ? (
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+              ) : (
+                <ShieldAlert className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+              )}
+              <span className="tracking-wide">
+                {guardrailMode === 'hardened' ? 'Hardened' : 'Basic'}
+              </span>
+            </button>
+          )}
+
           {/* Subtle Online Status Dot */}
           <div 
-            title={`Ollama Daemon: ${ollamaStatus.status} (${ollamaStatus.model})`}
+            title={`Model: ${ollamaStatus.model}`}
             className="flex items-center space-x-1.5 px-2.5 py-1 text-xs text-slate-500 dark:text-slate-400 select-none cursor-default"
           >
             <span className={`w-1.5 h-1.5 rounded-full ${

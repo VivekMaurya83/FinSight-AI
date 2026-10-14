@@ -1,5 +1,5 @@
 from datetime import datetime
-from pydantic import BaseModel, EmailStr, Field, field_validator, ConfigDict
+from pydantic import BaseModel, EmailStr, Field, field_validator, ConfigDict, computed_field
 
 class UserSignup(BaseModel):
     name: str = Field(..., min_length=2, max_length=100, description="Full Name")
@@ -25,6 +25,11 @@ class UserResponse(BaseModel):
     name: str
     email: str
     created_at: datetime
+
+    @computed_field
+    @property
+    def is_admin(self) -> bool:
+        return self.email.lower() == "admin@finsight.ai"
 
 class Token(BaseModel):
     access_token: str

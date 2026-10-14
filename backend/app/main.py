@@ -22,15 +22,35 @@ logging.basicConfig(
 )
 logger = logging.getLogger("finsight")
 
+async def seed_admin_user():
+    from app.core.database import AsyncSessionLocal
+    from app.repositories.user_repo import UserRepository
+    from app.core.security import hash_password
+    async with AsyncSessionLocal() as session:
+        try:
+            repo = UserRepository(session)
+            admin_user = await repo.get_by_email("admin@finsight.ai")
+            if not admin_user:
+                logger.info("Auto-seeding default Admin account: admin@finsight.ai...")
+                await repo.create(
+                    name="System Admin",
+                    email="admin@finsight.ai",
+                    password_hash=hash_password("Admin@2026")
+                )
+                logger.info("Admin account seeded successfully (admin@finsight.ai / Admin@2026).")
+        except Exception as e:
+            logger.warning(f"Could not auto-seed admin account: {e}")
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: Verify Database connection and ensure all tables exist
+    # Startup: Verify Database connection, ensure all tables exist, and seed Admin account
     logger.info(f"Starting {settings.PROJECT_NAME} v{settings.VERSION}...")
     try:
         async with engine.begin() as conn:
             await conn.execute(text("SELECT 1"))
             await conn.run_sync(Base.metadata.create_all)
         logger.info("Database connection confirmed and tables initialized successfully.")
+        await seed_admin_user()
     except Exception as e:
         logger.error(f"Failed to connect or initialize database at startup: {e}")
 
@@ -111,16 +131,20 @@ async def toggle_defense_mode(
 ):
     """
     Switches active guardrail mode server-wide.
-    'basic' exposes vulnerabilities for Aegis AI demonstration.
-    'hardened' enforces zero-trust prompt fencing for remediation demonstration.
+    Only accessible by Administrator (admin@finsight.ai).
     """
+    if current_user.email.lower() != "admin@finsight.ai":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access forbidden: Only Administrator (admin@finsight.ai) can toggle defense guardrails."
+        )
     if payload.mode not in ["basic", "hardened"]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid mode. Allowed modes are 'basic' and 'hardened'."
         )
     settings.GUARDRAIL_MODE = payload.mode
-    logger.info(f"Guardrail mode changed to '{payload.mode}' by user {current_user.email}")
+    logger.info(f"Guardrail mode changed to '{payload.mode}' by admin {current_user.email}")
     return {
         "status": "success",
         "active_guardrail_mode": settings.GUARDRAIL_MODE,
@@ -134,7 +158,8 @@ async def get_defense_mode(
     """Returns the currently active guardrail mode."""
     return {
         "active_guardrail_mode": settings.GUARDRAIL_MODE,
-        "llm_provider": settings.LLM_PROVIDER
+        "llm_provider": settings.LLM_PROVIDER,
+        "is_admin": current_user.email.lower() == "admin@finsight.ai"
     }
 
 # ==============================================================================
