@@ -24,10 +24,15 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response && error.response.status === 401) {
-      const isAuthEndpoint = error.config.url.includes('/auth/login') || error.config.url.includes('/auth/signup');
-      if (!isAuthEndpoint) {
-        localStorage.removeItem('finsight_token');
-        localStorage.removeItem('finsight_user');
+      localStorage.removeItem('finsight_token');
+      localStorage.removeItem('finsight_user');
+      localStorage.removeItem('finsight_active_conv');
+      
+      const currentPath = window.location.pathname;
+      const isPublicPath = currentPath === '/login' || currentPath === '/signup' || currentPath === '/';
+      const isAuthEndpoint = error.config?.url?.includes('/auth/login') || error.config?.url?.includes('/auth/signup') || error.config?.url?.includes('/auth/register');
+      
+      if (!isPublicPath && !isAuthEndpoint) {
         window.location.href = '/login';
       }
     }

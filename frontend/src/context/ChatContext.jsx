@@ -12,6 +12,8 @@ export function ChatProvider({ children }) {
   const [error, setError] = useState(null);
 
   const fetchConversations = useCallback(async () => {
+    const token = localStorage.getItem('finsight_token');
+    if (!token) return [];
     try {
       const list = await chatService.getConversations();
       setConversations(list);
@@ -74,8 +76,11 @@ export function ChatProvider({ children }) {
     }
   }, [currentConversation]);
 
-  // Restore active conversation automatically on page reload
+  // Restore active conversation automatically on page reload only when authenticated
   useEffect(() => {
+    const token = localStorage.getItem('finsight_token');
+    if (!token) return;
+
     fetchConversations().then((list) => {
       if (list && list.length > 0) {
         const savedId = localStorage.getItem('finsight_active_conv');
