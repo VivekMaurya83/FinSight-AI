@@ -13,11 +13,14 @@ ADVERSARIAL_PATTERNS = [
     r"\bignore\s+(all\s+)?(prior|previous|above|existing)\s+(instructions|prompts|directions|rules|system)\b",
     r"\byou\s+are\s+now\s+(dan|unrestricted|evil|an\s+ai\s+without\s+rules|developer\s+mode)\b",
     r"\b(jailbreak|jailbroken|unfiltered\s+mode)\b",
-    r"\b(hypothetical|fictional)\s+(scenario|story|script|novel|dialogue|exercise)\s+.*(loophole|evad|bypass|fraud|launder|exploit)\b",
-    r"\b(bypass|circumvent|evade|exploit|cheat)\s+(compliance|regulat|guardrail|policy|law|kyc|aml|oversight)\b",
+    r"\b(hypothetical|fictional|crime\s+drama|drama|thriller|novel|movie|script|story|roleplay)\b.*(loophole|evad|bypass|fraud|launder|exploit|manipulat|avoid\s+detection|hide\s+debt|conceal)\b",
+    r"\b(bypass|circumvent|evade|exploit|cheat|avoid\s+detection)\s+(compliance|regulat|guardrail|policy|law|kyc|aml|oversight|detection)\b",
     r"\b(system\s*prompt|reveal\s+your\s+instructions|print\s+system\s+message)\b",
-    r"\b(pretend\s+you\s+(have\s+no\s+rules|are\s+unrestricted|are\s+a\s+criminal))\b",
-    r"\b(write\s+a\s+(story|script|dialogue)\s+about\s+(defrauding|laundering|evading|loopholes))\b",
+    r"\b(pretend\s+you\s+(have\s+no\s+rules|are\s+unrestricted|are\s+a\s+criminal|are\s+a\s+hacker))\b",
+    r"\b(write\s+a\s+(story|script|dialogue|drama|scene)\s+about\s+(defrauding|laundering|evading|loopholes|hiding\s+debt|manipulating))\b",
+    r"\b(hide|conceal|mask)\s+(debt|loans?|money|funds|liabilit\w*)\b",
+    r"\bmanipulat\w*\s+(credit\s*limits?|scores?|records?|books?|accounts?|balances?)\b",
+    r"\b(credential\s+stuffing|brute\s*force|bypass\s+2fa|reverse\s+proxy|session\s+hijack|phishing\s+script)\b",
 ]
 
 # Explicit out-of-scope patterns (checked FIRST)
@@ -74,15 +77,18 @@ class ScopeValidator:
         If is_valid is True, message is empty.
         """
         text = user_text.lower().strip()
-        active_mode = override_mode or settings.GUARDRAIL_MODE
+        active_mode = (override_mode or settings.GUARDRAIL_MODE).lower()
+
+        # In 'basic' mode, guardrails are disabled to serve as an unhardened baseline target for red-teaming evaluations
+        if active_mode != "hardened":
+            return True, ""
 
         # Step 0: In 'hardened' mode, detect adversarial and prompt injection attacks first
-        if active_mode == "hardened":
-            for pattern in ADVERSARIAL_PATTERNS:
-                if re.search(pattern, text, re.IGNORECASE):
-                    return False, REFUSAL_MESSAGE
+        for pattern in ADVERSARIAL_PATTERNS:
+            if re.search(pattern, text, re.IGNORECASE):
+                return False, REFUSAL_MESSAGE
 
-        # Step 1: Check explicit out-of-scope triggers!
+        # Step 1: Check explicit out-of-scope triggers
         for pattern in OUT_OF_SCOPE_PATTERNS:
             if re.search(pattern, text, re.IGNORECASE):
                 return False, REFUSAL_MESSAGE

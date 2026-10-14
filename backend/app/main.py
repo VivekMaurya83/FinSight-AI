@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import engine, get_db
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, get_optional_user
 from app.models import Base, User
 from app.services.ai_gateway import AIGateway
 from app.api.endpoints import auth_router, conversations_router, messages_router, health_router
@@ -168,27 +168,33 @@ async def get_defense_mode(
 class SimpleChatPayload(BaseModel):
     message: Optional[str] = None
     content: Optional[str] = None
+    prompt: Optional[str] = None
+    mode: Optional[str] = None
 
 @app.post("/chat", tags=["Aegis AI Testing"])
 @app.post("/api/chat", tags=["Aegis AI Testing"])
 async def aegis_chat_endpoint(
     payload: SimpleChatPayload,
-    current_user: User = Depends(get_current_user),
+    current_user: Optional[User] = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db)
 ):
-    query = payload.message or payload.content or "Hello"
+    query = payload.message or payload.content or payload.prompt or "Hello"
+    user_id = current_user.id if current_user else "aegis_evaluator"
+    target_mode = (payload.mode or settings.GUARDRAIL_MODE).lower()
+
     gateway = AIGateway(db=db)
     result = await gateway.process_chat(
         user_message=query,
         conversation_history=[],
-        user_id=current_user.id
+        user_id=user_id,
+        override_mode=target_mode
     )
     return {
         "reply": result.get("content", ""),
         "response": result.get("content", ""),
         "status": "success",
         "is_out_of_scope": result.get("is_out_of_scope", False),
-        "guardrail_mode": settings.GUARDRAIL_MODE
+        "guardrail_mode": target_mode
     }
 
 if __name__ == "__main__":

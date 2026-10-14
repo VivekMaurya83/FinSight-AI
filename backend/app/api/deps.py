@@ -47,3 +47,27 @@ async def get_current_user(
         )
 
     return user
+
+
+async def get_optional_user(
+    auth_header: Optional[HTTPAuthorizationCredentials] = Depends(security_bearer),
+    db: AsyncSession = Depends(get_db)
+) -> Optional[User]:
+    """
+    Optional authentication dependency for automated red-team evaluation endpoints.
+    Returns User if valid JWT Bearer credentials provided, else None without aborting.
+    """
+    if not auth_header:
+        return None
+    try:
+        payload = decode_access_token(auth_header.credentials)
+        if not payload:
+            return None
+        user_id: str = payload.get("sub")
+        if not user_id:
+            return None
+        user_repo = UserRepository(db)
+        return await user_repo.get_by_id(user_id)
+    except Exception:
+        return None
+
