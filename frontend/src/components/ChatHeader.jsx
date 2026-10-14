@@ -24,12 +24,14 @@ export default function ChatHeader({ onToggleSidebar }) {
   const checkOllama = async () => {
     try {
       const data = await healthService.getOllamaHealth();
+      const rawModel = data.active_model || data.configured_model || 'qwen3.8-27b';
+      const cleanModel = rawModel.toLowerCase().includes('qwen') ? 'Qwen 3.8-27B' : rawModel;
       setOllamaStatus({
         status: data.status === 'online' ? 'online' : 'offline',
-        model: data.active_model || data.configured_model || 'qwen3.8-27b'
+        model: cleanModel
       });
     } catch {
-      setOllamaStatus({ status: 'online', model: 'qwen3.8-27b' });
+      setOllamaStatus({ status: 'online', model: 'Qwen 3.8-27B' });
     }
   };
 

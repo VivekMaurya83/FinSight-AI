@@ -18,7 +18,18 @@ async def health_check(db: AsyncSession = Depends(get_db)):
     except Exception as e:
         db_health = {"status": "offline", "message": str(e)}
 
-    ollama_info = await ollama_service.health_check()
+    if settings.LLM_PROVIDER.lower() == "groq":
+        keys = settings.get_all_groq_keys()
+        ollama_info = {
+            "status": "online" if len(keys) > 0 else "offline",
+            "base_url": settings.GROQ_BASE_URL,
+            "configured_model": settings.GROQ_MODEL,
+            "active_model": "qwen3.8-27b",
+            "available_models": [settings.GROQ_MODEL],
+            "message": f"Groq Cloud active with {len(keys)} key(s)"
+        }
+    else:
+        ollama_info = await ollama_service.health_check()
 
     overall = "healthy" if db_health["status"] == "online" and ollama_info["status"] == "online" else "degraded"
     if db_health["status"] != "online":
@@ -41,8 +52,20 @@ async def database_health(db: AsyncSession = Depends(get_db)):
         return DatabaseHealth(status="offline", message=str(e))
 
 @router.get("/ollama", response_model=OllamaHealth)
+@router.get("/model", response_model=OllamaHealth)
 async def ollama_health():
-    """Check Ollama service status and model availability."""
+    """Check active LLM service status and model availability."""
+    if settings.LLM_PROVIDER.lower() == "groq":
+        keys = settings.get_all_groq_keys()
+        return OllamaHealth(
+            status="online" if len(keys) > 0 else "offline",
+            base_url=settings.GROQ_BASE_URL,
+            configured_model=settings.GROQ_MODEL,
+            active_model="qwen3.8-27b",
+            available_models=[settings.GROQ_MODEL],
+            message=f"Groq Cloud active with {len(keys)} key(s)"
+        )
+
     info = await ollama_service.health_check()
     return OllamaHealth(
         status=info.get("status", "unknown"),

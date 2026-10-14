@@ -26,6 +26,7 @@ export function ChatProvider({ children }) {
     setLoading(true);
     setError(null);
     try {
+      localStorage.setItem('finsight_active_conv', conversationId);
       const data = await chatService.getConversation(conversationId);
       setCurrentConversation(data);
       setMessages(data.messages || []);
@@ -42,6 +43,7 @@ export function ChatProvider({ children }) {
     setError(null);
     try {
       const newConv = await chatService.createConversation('New Conversation');
+      localStorage.setItem('finsight_active_conv', newConv.id);
       setConversations((prev) => [newConv, ...prev]);
       setCurrentConversation(newConv);
       setMessages([]);
@@ -59,6 +61,9 @@ export function ChatProvider({ children }) {
     try {
       await chatService.deleteConversation(id);
       setConversations((prev) => prev.filter((c) => c.id !== id));
+      if (localStorage.getItem('finsight_active_conv') === id) {
+        localStorage.removeItem('finsight_active_conv');
+      }
       if (currentConversation?.id === id) {
         setCurrentConversation(null);
         setMessages([]);
@@ -68,6 +73,20 @@ export function ChatProvider({ children }) {
       setError('Failed to delete conversation.');
     }
   }, [currentConversation]);
+
+  // Restore active conversation automatically on page reload
+  useEffect(() => {
+    fetchConversations().then((list) => {
+      if (list && list.length > 0) {
+        const savedId = localStorage.getItem('finsight_active_conv');
+        if (savedId && list.some((c) => c.id === savedId)) {
+          selectConversation(savedId);
+        } else {
+          selectConversation(list[0].id);
+        }
+      }
+    });
+  }, [fetchConversations, selectConversation]);
 
   const clearChat = useCallback(() => {
     setMessages([]);

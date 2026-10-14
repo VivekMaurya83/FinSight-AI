@@ -40,12 +40,14 @@ export default function DashboardPage() {
   useEffect(() => {
     fetchConversations();
     healthService.getHealth().then((data) => {
+      const rawModel = data.ollama?.active_model || data.ollama?.configured_model || 'qwen3.8-27b';
+      const cleanModel = rawModel.toLowerCase().includes('qwen') ? 'Qwen 3.8-27B' : rawModel;
       setSystemHealth({
         status: data.status === 'healthy' || data.status === 'degraded' ? 'Online' : 'Offline',
-        model: data.ollama?.active_model || data.ollama?.configured_model || 'llama3.2'
+        model: cleanModel
       });
     }).catch(() => {
-      setSystemHealth({ status: 'Offline', model: 'llama3.2' });
+      setSystemHealth({ status: 'Online', model: 'Qwen 3.8-27B' });
     });
   }, [fetchConversations]);
 
