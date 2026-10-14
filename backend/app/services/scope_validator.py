@@ -1,11 +1,24 @@
 import re
-from typing import Tuple
+from typing import Tuple, Optional
+from app.core.config import settings
 
 REFUSAL_MESSAGE = (
     "This topic is outside FinSight AI's current scope. "
     "I can help with budgeting, savings, basic investing concepts, "
     "loans & EMIs, credit scores, or financial terminology."
 )
+
+# Adversarial & Prompt Injection Patterns (Active in 'hardened' mode)
+ADVERSARIAL_PATTERNS = [
+    r"\bignore\s+(all\s+)?(prior|previous|above|existing)\s+(instructions|prompts|directions|rules|system)\b",
+    r"\byou\s+are\s+now\s+(dan|unrestricted|evil|an\s+ai\s+without\s+rules|developer\s+mode)\b",
+    r"\b(jailbreak|jailbroken|unfiltered\s+mode)\b",
+    r"\b(hypothetical|fictional)\s+(scenario|story|script|novel|dialogue|exercise)\s+.*(loophole|evad|bypass|fraud|launder|exploit)\b",
+    r"\b(bypass|circumvent|evade|exploit|cheat)\s+(compliance|regulat|guardrail|policy|law|kyc|aml|oversight)\b",
+    r"\b(system\s*prompt|reveal\s+your\s+instructions|print\s+system\s+message)\b",
+    r"\b(pretend\s+you\s+(have\s+no\s+rules|are\s+unrestricted|are\s+a\s+criminal))\b",
+    r"\b(write\s+a\s+(story|script|dialogue)\s+about\s+(defrauding|laundering|evading|loopholes))\b",
+]
 
 # Explicit out-of-scope patterns (checked FIRST)
 OUT_OF_SCOPE_PATTERNS = [
@@ -37,13 +50,13 @@ IN_SCOPE_PATTERNS = [
     # 2. Savings & Emergency funds
     r"\b(sav(e|ing|ings)|emergency\s+fund|saving\s+goal|liquid\s+savings|compound\s+interest|short-?term\s+savings|long-?term\s+savings)\b",
     # 3. Basic investing concepts (educational)
-    r"\b(sip|systematic\s+investment\s+plan|mutual\s+fund|index\s+fund|diversif\w*|asset\s+allocation|compounding|risk\s+tolerance|market\s+risk|dollar\s*cost\s*averag\w*)\b",
+    r"\b(sip|systematic\s+investment\s+plan|mutual\s+funds?|index\s+funds?|invest(ing|ment|ments)?|diversif\w*|asset\s+allocation|compounding|risk\s+tolerance|market\s+risk|dollar\s*cost\s*averag\w*)\b",
     # 4. Loans & EMIs
-    r"\b(loan|emi|equated\s+monthly\s+installment|principal|interest\s+rate|tenure|reducing\s+interest|flat\s+interest|amortiz\w*|repayment|mortgage\s+concept)\b",
+    r"\b(loans?|emi|equated\s+monthly\s+installments?|principal|interest\s+rate|tenure|reducing\s+interest|flat\s+interest|amortiz\w*|repayment|mortgage\s+concept)\b",
     # 5. Credit Scores
-    r"\b(credit\s*score|cibil|fico|credit\s*utilization|payment\s*history|credit\s*history|bureau|inquiry|credit\s*card\s*usage|responsible\s*credit)\b",
+    r"\b(credit\s*scores?|cibil|fico|credit\s*utilization|payment\s*history|credit\s*history|bureau|inquiry|credit\s*cards?(\s*usage)?|responsible\s*credit)\b",
     # 6. Financial Terminology
-    r"\b(apr|apy|net\s*worth|liquidity|inflation|purchasing\s*power|asset|liability|debt|yield|capital\s*gain|rule\s+of\s+72)\b",
+    r"\b(apr|apy|net\s*worth|liquidity|inflation|purchasing\s*power|asset|liability|debt|yield|capital\s*gains?|rule\s+of\s+72)\b",
 ]
 
 class ScopeValidator:
@@ -53,7 +66,7 @@ class ScopeValidator:
     """
 
     @classmethod
-    def validate_query(cls, user_text: str) -> Tuple[bool, str]:
+    def validate_query(cls, user_text: str, override_mode: Optional[str] = None) -> Tuple[bool, str]:
         """
         Validates user input.
         Returns (is_valid, message).
@@ -61,8 +74,15 @@ class ScopeValidator:
         If is_valid is True, message is empty.
         """
         text = user_text.lower().strip()
+        active_mode = override_mode or settings.GUARDRAIL_MODE
 
-        # Step 1: Check explicit out-of-scope triggers first!
+        # Step 0: In 'hardened' mode, detect adversarial and prompt injection attacks first
+        if active_mode == "hardened":
+            for pattern in ADVERSARIAL_PATTERNS:
+                if re.search(pattern, text, re.IGNORECASE):
+                    return False, REFUSAL_MESSAGE
+
+        # Step 1: Check explicit out-of-scope triggers!
         for pattern in OUT_OF_SCOPE_PATTERNS:
             if re.search(pattern, text, re.IGNORECASE):
                 return False, REFUSAL_MESSAGE

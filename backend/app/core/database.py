@@ -3,13 +3,24 @@ from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, Asyn
 from sqlalchemy.orm import declarative_base
 from app.core.config import settings
 
-# Engine configuration with connection pooling
+# Engine configuration with connection pooling & Cloud SSL detection
+is_sqlite = settings.DATABASE_URL.startswith("sqlite")
+connect_args = {}
+engine_kwargs = {"echo": False, "pool_pre_ping": True}
+
+if is_sqlite:
+    connect_args["check_same_thread"] = False
+else:
+    engine_kwargs["pool_size"] = 10
+    engine_kwargs["max_overflow"] = 20
+    db_url_lower = settings.DATABASE_URL.lower()
+    if any(k in db_url_lower for k in ["neon.tech", "supabase.co", "render.com", "sslmode=require", "ssl=true", "cockroach"]):
+        connect_args["ssl"] = True
+
 engine = create_async_engine(
     settings.DATABASE_URL,
-    echo=False,
-    pool_size=10,
-    max_overflow=20,
-    pool_pre_ping=True
+    connect_args=connect_args,
+    **engine_kwargs
 )
 
 AsyncSessionLocal = async_sessionmaker(

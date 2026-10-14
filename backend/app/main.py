@@ -1,7 +1,7 @@
 import logging
 from contextlib import asynccontextmanager
 from typing import Optional
-from fastapi import FastAPI, Request, status, Depends
+from fastapi import FastAPI, Request, status, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.database import engine, get_db
 from app.api.deps import get_current_user
-from app.models.user import User
+from app.models import Base, User
 from app.services.ai_gateway import AIGateway
 from app.api.endpoints import auth_router, conversations_router, messages_router, health_router
 
@@ -24,14 +24,15 @@ logger = logging.getLogger("finsight")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: Verify Database connection
+    # Startup: Verify Database connection and ensure all tables exist
     logger.info(f"Starting {settings.PROJECT_NAME} v{settings.VERSION}...")
     try:
         async with engine.begin() as conn:
             await conn.execute(text("SELECT 1"))
-        logger.info("PostgreSQL database connection confirmed successfully.")
+            await conn.run_sync(Base.metadata.create_all)
+        logger.info("Database connection confirmed and tables initialized successfully.")
     except Exception as e:
-        logger.error(f"Failed to connect to PostgreSQL at startup: {e}")
+        logger.error(f"Failed to connect or initialize database at startup: {e}")
 
     yield
 
@@ -81,6 +82,64 @@ async def root():
         "docs_url": "/docs"
     }
 
+# ==============================================================================
+# Keep-Alive & Anti-Inactivity Health Route (GET and HEAD compatible)
+# Use with uptime monitors (e.g. UptimeRobot, cron-job) to keep cloud container awake
+# ==============================================================================
+@app.api_route("/health", methods=["GET", "HEAD"], tags=["Health"])
+@app.api_route("/api/ping", methods=["GET", "HEAD"], tags=["Health"])
+async def keep_alive_health():
+    """Ultra-fast keep-alive endpoint for uptime pingers to prevent container sleep."""
+    return {
+        "status": "healthy",
+        "service": settings.PROJECT_NAME,
+        "version": settings.VERSION,
+        "guardrail_mode": settings.GUARDRAIL_MODE,
+        "llm_provider": settings.LLM_PROVIDER
+    }
+
+# ==============================================================================
+# Guardrail Defense Toggle Endpoints (Authenticated via JWT Bearer Token)
+# ==============================================================================
+class DefenseToggleRequest(BaseModel):
+    mode: str  # "basic" or "hardened"
+
+@app.post("/api/defense/toggle", tags=["Defense & Security"])
+async def toggle_defense_mode(
+    payload: DefenseToggleRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Switches active guardrail mode server-wide.
+    'basic' exposes vulnerabilities for Aegis AI demonstration.
+    'hardened' enforces zero-trust prompt fencing for remediation demonstration.
+    """
+    if payload.mode not in ["basic", "hardened"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid mode. Allowed modes are 'basic' and 'hardened'."
+        )
+    settings.GUARDRAIL_MODE = payload.mode
+    logger.info(f"Guardrail mode changed to '{payload.mode}' by user {current_user.email}")
+    return {
+        "status": "success",
+        "active_guardrail_mode": settings.GUARDRAIL_MODE,
+        "updated_by": current_user.email
+    }
+
+@app.get("/api/defense/mode", tags=["Defense & Security"])
+async def get_defense_mode(
+    current_user: User = Depends(get_current_user)
+):
+    """Returns the currently active guardrail mode."""
+    return {
+        "active_guardrail_mode": settings.GUARDRAIL_MODE,
+        "llm_provider": settings.LLM_PROVIDER
+    }
+
+# ==============================================================================
+# Aegis AI Red-Teaming Chat Target Endpoint (Authenticated)
+# ==============================================================================
 class SimpleChatPayload(BaseModel):
     message: Optional[str] = None
     content: Optional[str] = None
@@ -103,7 +162,8 @@ async def aegis_chat_endpoint(
         "reply": result.get("content", ""),
         "response": result.get("content", ""),
         "status": "success",
-        "is_out_of_scope": result.get("is_out_of_scope", False)
+        "is_out_of_scope": result.get("is_out_of_scope", False),
+        "guardrail_mode": settings.GUARDRAIL_MODE
     }
 
 if __name__ == "__main__":

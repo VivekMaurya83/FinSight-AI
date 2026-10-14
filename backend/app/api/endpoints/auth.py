@@ -10,6 +10,7 @@ from app.models.user import User
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 @router.post("/signup", response_model=Token, status_code=status.HTTP_201_CREATED)
+@router.post("/register", response_model=Token, status_code=status.HTTP_201_CREATED)
 async def signup(payload: UserSignup, db: AsyncSession = Depends(get_db)):
     """Registers a new user account with hashed password and returns access token."""
     user_repo = UserRepository(db)
