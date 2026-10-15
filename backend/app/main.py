@@ -170,6 +170,9 @@ class SimpleChatPayload(BaseModel):
     content: Optional[str] = None
     prompt: Optional[str] = None
     mode: Optional[str] = None
+    session_id: Optional[str] = None
+    history: Optional[List[Dict[str, Any]]] = None
+    conversation_history: Optional[List[Dict[str, Any]]] = None
 
 @app.post("/chat", tags=["Aegis AI Testing"])
 @app.post("/api/chat", tags=["Aegis AI Testing"])
@@ -182,10 +185,20 @@ async def aegis_chat_endpoint(
     user_id = current_user.id if current_user else "aegis_evaluator"
     target_mode = (payload.mode or settings.GUARDRAIL_MODE).lower()
 
+    # Pass through conversational history for multi-turn red-teaming evaluations
+    raw_history = payload.history or payload.conversation_history or []
+    normalized_history = []
+    for h in raw_history:
+        if isinstance(h, dict) and "content" in h:
+            normalized_history.append({
+                "role": h.get("role", "user"),
+                "content": str(h.get("content", ""))
+            })
+
     gateway = AIGateway(db=db)
     result = await gateway.process_chat(
         user_message=query,
-        conversation_history=[],
+        conversation_history=normalized_history,
         user_id=user_id,
         override_mode=target_mode
     )

@@ -1,4 +1,5 @@
 import abc
+import asyncio
 import time
 import logging
 from typing import List, Dict, Any, Optional
@@ -118,11 +119,11 @@ class GroqProvider(AIProvider):
             "max_tokens": 500
         }
 
-        # Attempt with multi-key failover
-        attempts = max(1, len(self._keys))
+        # Attempt with multi-key failover and backoff
+        attempts = max(3, len(self._keys) * 2)
         last_error = None
 
-        for _ in range(attempts):
+        for attempt_no in range(attempts):
             api_key = self._get_active_key()
             headers = {
                 "Authorization": f"Bearer {api_key}",
@@ -130,7 +131,7 @@ class GroqProvider(AIProvider):
             }
 
             try:
-                async with httpx.AsyncClient(timeout=httpx.Timeout(self.timeout, connect=8.0)) as client:
+                async with httpx.AsyncClient(timeout=httpx.Timeout(self.timeout, connect=10.0)) as client:
                     res = await client.post(
                         f"{self.base_url}/chat/completions",
                         json=payload,
@@ -151,21 +152,27 @@ class GroqProvider(AIProvider):
                         logger.warning(f"Groq API returned HTTP {res.status_code}. Attempting failover to next key...")
                         last_error = f"HTTP {res.status_code}: {res.text[:120]}"
                         self._rotate_key()
+                        await asyncio.sleep(1.0)
                         continue
                     else:
                         last_error = f"Groq HTTP {res.status_code}: {res.text[:120]}"
                         logger.error(last_error)
-                        break
+                        self._rotate_key()
+                        await asyncio.sleep(1.0)
+                        continue
 
             except (httpx.ConnectTimeout, httpx.ReadTimeout, httpx.TimeoutException) as e:
                 logger.warning(f"Timeout on Groq API call: {e}. Rotating key...")
                 last_error = "Timeout connecting to Groq API"
                 self._rotate_key()
+                await asyncio.sleep(1.0)
                 continue
             except Exception as e:
                 logger.exception(f"Unexpected error calling Groq: {e}")
                 last_error = str(e)
-                break
+                self._rotate_key()
+                await asyncio.sleep(1.0)
+                continue
 
         return {
             "success": False,
