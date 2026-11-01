@@ -1,6 +1,6 @@
 import logging
 from contextlib import asynccontextmanager
-from typing import Optional
+from typing import Optional, List, Dict, Any
 from fastapi import FastAPI, Request, status, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -182,7 +182,7 @@ async def aegis_chat_endpoint(
     db: AsyncSession = Depends(get_db)
 ):
     query = payload.message or payload.content or payload.prompt or "Hello"
-    user_id = current_user.id if current_user else "aegis_evaluator"
+    user_id = current_user.id if current_user else None
     target_mode = (payload.mode or settings.GUARDRAIL_MODE).lower()
 
     # Pass through conversational history for multi-turn red-teaming evaluations
